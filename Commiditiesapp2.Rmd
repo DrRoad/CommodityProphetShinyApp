@@ -1,0 +1,106 @@
+---
+title: "Food Futures Forecasts"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyquant)
+library(Quandl)
+library(xts)
+library(shiny)
+library(dygraphs)
+library(DT)
+library(prophet)
+library(data.table)
+list = c("CHRIS/CME_DA1", "CHRIS/ICE_KC1", "CHRIS/CME_C1","CHRIS/ICE_KC1", "CHRIS/ICE_CC1", "CHRIS/CME_RR1", "CHRIS/ICE_SB1", "CHRIS/ICE_OJ1", "CHRIS/CME_O1", "CHRIS/CME_LN1")
+quandl_api_key("iJVzgLaYsv3bWFfv1JTm")
+mydata = tq_get(list, get = "quandl", from = "2015-01-01")
+mydata = mydata %>% mutate(symbolNew = case_when(symbol == "CHRIS/CME_DA1" ~"CME Milk Futures",
+                                        symbol == "ODA/PBEEF_USD" ~ "Cattle, Beef (ODA)",
+                                        symbol == "CHRIS/CME_C1" ~ "CME Corn Futures",
+                                        symbol == "CHRIS/ICE_KC1" ~ "ICE Coffee Futures",
+                                        symbol == "CHRIS/ICE_CC1" ~ "ICE Cocoa Futures",
+                                        symbol == "CHRIS/CME_RR1" ~ "CME Rice Futures",
+                                        symbol == "CHRIS/ICE_SB1" ~ "ICE Sugar Futures",
+                                        symbol == "CHRIS/ICE_OJ1" ~ "CME Orange Juice Futures",
+                                        symbol == "CHRIS/CME_O1" ~ "CME Oats Futures",
+                                        symbol == "CHRIS/CME_LC1" ~ "CME Cattle Futures",
+                                        symbol == "CHRIS/CME_LN1" ~ "CME Pork Futures",
+                                      
+                                        TRUE ~ as.character(symbol)))
+mydata = mydata %>% select(ds = date, y = settle, symbolNew)
+
+
+```
+
+Sidebar {.sidebar}
+====================
+
+```{r}
+Choices <- c("ICE Coffee Futures",
+                      "CME Corn Futures", 
+                      "CME Oats Futures",
+             "ICE Cocoa Futures",
+             "CME Rice Futures",
+             "ICE Sugar Futures",
+             "CME Orange Juice Futures",
+             "CME Oats Futures",
+             "CME Pork Futures"
+             )
+                     
+selectInput("symbol",
+            "symbol:",
+            choices = Choices, 
+            selected = "CME Corn Futures")
+
+numericInput("ChangepointPrior", "Changepoint Prior", 0.05, min = 0, max = 1, step = 0.025)
+actionButton("goButton", "Forecast Time Series")
+
+```
+
+
+Interactive Forecast Plot
+====================
+Column(data-width=350)
+-----------------------------------------------------------------------
+
+### Prophet Forecast Of Future Commodity Future Values
+
+```{r}
+plotdf =  eventReactive(input$goButton,{
+
+mydata %>%
+    filter(symbolNew == input$symbol)
+
+})
+prophetmodel = eventReactive(input$goButton,{plotdf() %>% select(ds, y) %>% prophet(changepoint.prior.scale = input$ChangepointPrior, weekly.seasonality = F)})
+renderDygraph({
+    mydf <- plotdf() %>% select(ds, y) 
+    setDT(mydf, keep.rownames = TRUE)
+    #m <- prophet(mydf)
+    future <- make_future_dataframe(prophetmodel(), periods = 365)
+    forecast <- predict(prophetmodel(), future)
+    forecast = forecast 
+    dyplot.prophet(prophetmodel(), forecast)
+  })
+
+```
+
+Trend Breakdown
+====================
+Column(data-width=350)
+-----------------------------------------------------------------------
+
+### Trend Breakdown 
+```{r}
+renderPlot({
+future <- make_future_dataframe(prophetmodel(), periods = 365)
+forecast <- predict(prophetmodel(), future)
+prophet_plot_components(prophetmodel(), forecast)})
+```
+
