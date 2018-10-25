@@ -18,7 +18,7 @@ library(DT)
 library(prophet)
 library(data.table)
 list = c("CHRIS/CME_DA1", "CHRIS/ICE_KC1", "CHRIS/CME_C1","CHRIS/ICE_KC1", "CHRIS/ICE_CC1", "CHRIS/CME_RR1", "CHRIS/ICE_SB1", "CHRIS/ICE_OJ1", "CHRIS/CME_O1", "CHRIS/CME_LN1")
-quandl_api_key("iJVzgLaYsv3bWFfv1JTm")
+
 mydata = tq_get(list, get = "quandl", from = "2015-01-01")
 mydata = mydata %>% mutate(symbolNew = case_when(symbol == "CHRIS/CME_DA1" ~"CME Milk Futures",
                                         symbol == "ODA/PBEEF_USD" ~ "Cattle, Beef (ODA)",
