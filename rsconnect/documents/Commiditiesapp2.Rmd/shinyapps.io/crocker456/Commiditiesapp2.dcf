@@ -1,0 +1,12 @@
+name: Commiditiesapp2
+title: Commiditiesapp2
+username:
+account: crocker456
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 819437
+bundleId: 1971125
+url: https://crocker456.shinyapps.io/Commiditiesapp2/
+when: 1553789572.04254
+asMultiple: FALSE
+asStatic: FALSE

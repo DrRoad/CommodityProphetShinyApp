@@ -7,7 +7,9 @@ output:
 runtime: shiny
 ---
 
-```{r setup, include=FALSE}
+```{r package and data import, include=FALSE}
+
+# package import 
 library(flexdashboard)
 library(tidyquant)
 library(Quandl)
@@ -15,11 +17,17 @@ library(xts)
 library(shiny)
 library(dygraphs)
 library(DT)
+library(plotly)
 library(prophet)
 library(data.table)
+
+# quandl API key
+quandl_api_key("iJVzgLaYsv3bWFfv1JTm")
+# List of tickers that I want
 list = c("CHRIS/CME_DA1", "CHRIS/ICE_KC1", "CHRIS/CME_C1","CHRIS/ICE_KC1", "CHRIS/ICE_CC1", "CHRIS/CME_RR1", "CHRIS/ICE_SB1", "CHRIS/ICE_OJ1", "CHRIS/CME_O1", "CHRIS/CME_LN1")
 
-mydata = tq_get(list, get = "quandl", from = "2015-01-01")
+# obtain ticker data since 2017
+mydata = tq_get(list, get = "quandl", from = "2017-01-01")
 mydata = mydata %>% mutate(symbolNew = case_when(symbol == "CHRIS/CME_DA1" ~"CME Milk Futures",
                                         symbol == "ODA/PBEEF_USD" ~ "Cattle, Beef (ODA)",
                                         symbol == "CHRIS/CME_C1" ~ "CME Corn Futures",
@@ -33,16 +41,17 @@ mydata = mydata %>% mutate(symbolNew = case_when(symbol == "CHRIS/CME_DA1" ~"CME
                                         symbol == "CHRIS/CME_LN1" ~ "CME Pork Futures",
                                       
                                         TRUE ~ as.character(symbol)))
+
+# select data 
 mydata = mydata %>% select(ds = date, y = settle, symbolNew)
-
-
 ```
 
 Sidebar {.sidebar}
 ====================
 
 ```{r}
-Choices <- c("ICE Coffee Futures",
+# define a list of potential choices
+Choices = c("ICE Coffee Futures",
                       "CME Corn Futures", 
                       "CME Oats Futures",
              "ICE Cocoa Futures",
@@ -52,13 +61,23 @@ Choices <- c("ICE Coffee Futures",
              "CME Oats Futures",
              "CME Pork Futures"
              )
-                     
+# create a selector input to choose symbol                     
 selectInput("symbol",
-            "symbol:",
+            "symbol",
             choices = Choices, 
             selected = "CME Corn Futures")
+# create a numeric input for the fourier order
 
-numericInput("ChangepointPrior", "Changepoint Prior", 0.05, min = 0, max = 1, step = 0.025)
+numericInput("Fourier", "Seasonality Strength: Increase to Strengthen Influence of Seasonality in Model", 5, min = 1, max = 50, step = 1)
+# create a numeric input for the fourier order
+
+numericInput("ChangePointPrior", "Change Point Prior: Increase to Fit More Flexible Model", 0.05, min = 0, max = 1, step = 0.05)
+# create a numric input for the predictive interval width
+
+numericInput("PredictiveInterval", "Predictive Interval Width: Width of Posterior Predictive Interval", 0.95, min = 0, max = 1, step = 0.05)
+
+# create a select input to select either additive of multiplicative seasonality 
+selectInput("SeasonalityMode","Seasonality Model: Specify Additive Or Multiplicative Model", choices = c('additive', 'multiplicative'))
 actionButton("goButton", "Forecast Time Series")
 
 ```
@@ -72,35 +91,61 @@ Column(data-width=350)
 ### Prophet Forecast Of Future Commodity Future Values
 
 ```{r}
+# create a dataframe with just the symbol that has been select 
 plotdf =  eventReactive(input$goButton,{
-
 mydata %>%
     filter(symbolNew == input$symbol)
-
 })
-prophetmodel = eventReactive(input$goButton,{plotdf() %>% select(ds, y) %>% prophet(changepoint.prior.scale = input$ChangepointPrior, weekly.seasonality = F)})
+
+# create a prophet model using the 
+
+prophetmodel = eventReactive(input$goButton,{plotdf() %>% select(ds, y) %>% prophet(seasonality.prior.scale = input$Fourier, weekly.seasonality = F, changepoint.prior.scale = input$ChangePointPrior,
+                                                                                    interval.width = input$PredictiveInterval, seasonality.mode = input$SeasonalityMode)})
+
+
+# create a dygraph with the model
+
 renderDygraph({
-    mydf <- plotdf() %>% select(ds, y) 
+    mydf = plotdf() %>% select(ds, y) 
     setDT(mydf, keep.rownames = TRUE)
-    #m <- prophet(mydf)
-    future <- make_future_dataframe(prophetmodel(), periods = 365)
-    forecast <- predict(prophetmodel(), future)
+    future = make_future_dataframe(prophetmodel(), periods = 365)
+    forecast = predict(prophetmodel(), future)
     forecast = forecast 
     dyplot.prophet(prophetmodel(), forecast)
   })
-
 ```
 
 Trend Breakdown
 ====================
-Column(data-width=350)
+
+Column(data-height=1600)
 -----------------------------------------------------------------------
 
-### Trend Breakdown 
+
 ```{r}
+# plot the trend components 
 renderPlot({
 future <- make_future_dataframe(prophetmodel(), periods = 365)
 forecast <- predict(prophetmodel(), future)
 prophet_plot_components(prophetmodel(), forecast)})
+```
+
+Model Diagnostics
+====================
+Column(data-width=350)
+-----------------------------------------------------------------------
+
+```{r}
+# create a dataframe with cross validation scores
+df.cv <- 
+eventReactive(input$goButton,{
+cross_validation(prophetmodel(), initial = 365, period = 180, horizon = 180, units = 'days')
+})
+# Create coverage metric plot
+renderPlotly(ggplotly(plot_cross_validation_metric(df.cv(), metric = 'coverage')+ ggtitle('Percentage Of Data Covered By Predictive Interval')))
+# Create MSE metric plot
+renderPlotly(ggplotly(plot_cross_validation_metric(df.cv(), metric = 'mse') + ggtitle('Mean Squared Error')))
+# Create MAPE metric plot
+renderPlotly(ggplotly(plot_cross_validation_metric(df.cv(), metric = 'mape') + ggtitle('Mean Absolute Percentage Error')))
 ```
 
